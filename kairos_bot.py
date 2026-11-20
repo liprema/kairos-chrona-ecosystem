@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
@@ -22,6 +23,7 @@ llm = LLMService()
 bridge = BridgeService(db, chrona_token=CHRONA_TOKEN, kairos_token=KAIROS_TOKEN)
 
 dp = Dispatcher()
+bot_info: types.User = None
 
 def get_main_keyboard(user_id: int):
     kb = [
@@ -31,20 +33,48 @@ def get_main_keyboard(user_id: int):
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
+def is_addressed_to_kairos(message: types.Message) -> bool:
+    """Проверяет, адресовано ли сообщение Кайросу в группе или ЛС"""
+    if message.chat.type == "private":
+        return True
+
+    # Ответ на сообщение Кайроса
+    if message.reply_to_message and message.reply_to_message.from_user:
+        if bot_info and message.reply_to_message.from_user.id == bot_info.id:
+            return True
+
+    text = (message.text or message.caption or "").lower()
+    if not text:
+        return False
+
+    # Упоминание юзернейма (@kairos_bot)
+    if bot_info and bot_info.username and f"@{bot_info.username.lower()}" in text:
+        return True
+
+    # Обращение по имени (Кайрос, Кайросу, Кайросом и т.д.)
+    patterns = [r"\bкайрос\b", r"\bкайроса\b", r"\bкайросу\b", r"\bкайросом\b", r"\bкайросе\b", r"\bkairos\b"]
+    for pat in patterns:
+        if re.search(pat, text):
+            return True
+
+    return False
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    if not is_addressed_to_kairos(message):
+        return
+
     user_id = message.from_user.id
     db.set_user_mode(user_id, "steam_myth")
     
     greeting = (
-        "⚡️ <b>Салют! Я Кайрос</b> — твой партнёр по вайбкодингу и бизнес-эдвайзер.\n\n"
-        "Мы работаем в связке с <b>Хроной</b> (она рулит расписанием и бережёт от выгорания).\n\n"
-        "<b>В чём я могу помочь прямо сейчас:</b>\n"
-        "• 🏛 <b>Steam & Мифы</b> — лор Хроник Акаши, пантеоны богов, механики, вишлисты и страница игры.\n"
-        "• 🕹 <b>Яндекс.Игры</b> — быстрые концепты, удержание, монетизация и WebGL.\n"
-        "• 💡 <b>Бизнес-консалтинг</b> — разбор любых сторонних идей, MVP за выходные.\n"
-        "• 🚀 <b>Взять в работу</b> — превратим идею в проект и сразу поставим слоты Хроне!\n\n"
-        "<i>Выбирай режим в меню ниже или просто пиши, что на уме!</i>"
+        "⚡️ <b>Салют! Я Кайрос</b> — твой партнёр по вайбкодингу и инди-проектам.\n\n"
+        "Работаем в тандеме с <b>Хроной</b> (она держит расписание).\n\n"
+        "• 🏛 <b>Steam & Мифы</b> (Хроники Акаши, боги, квесты)\n"
+        "• 🕹 <b>Яндекс.Игры</b> (быстрые циклы, WebGL, удержание)\n"
+        "• 💡 <b>Брейншторм</b> (любые стартап-идеи и MVP)\n"
+        "• 🚀 <b>Проекты</b> (запуск спринта с фиксацией у Хроны)\n\n"
+        "<i>На связи! Выбирай тему внизу или пиши так.</i>"
     )
     await message.answer(greeting, reply_markup=get_main_keyboard(user_id))
 
@@ -52,59 +82,52 @@ async def cmd_start(message: types.Message):
 async def mode_steam(message: types.Message):
     db.set_user_mode(message.from_user.id, "steam_myth")
     await message.answer(
-        "🏛 <b>Режим «Steam: Мифология & Путешествия души» активен!</b>\n\n"
-        "Погружаемся в Хроники Акаши, пантеоны богов и нарратив. О какой главе или механике думаем?"
+        "🏛 <b>Режим «Steam: Мифология»!</b>\n"
+        "Хроники Акаши, пантеоны и сюжет. О какой главе или механике думаем?"
     )
 
 @dp.message(F.text == "🕹 Яндекс.Игры")
 async def mode_yandex(message: types.Message):
     db.set_user_mode(message.from_user.id, "yandex_games")
     await message.answer(
-        "🕹 <b>Режим «Яндекс.Игры» активен!</b>\n\n"
-        "Фокус на быстрых циклах, высоком ретеншне и кликабельных механиках. Какую игру пилим или тестируем?"
+        "🕹 <b>Режим «Яндекс.Игры»!</b>\n"
+        "Фокус на быстрых механиках и ретеншне. Какую игру пилим или тестим?"
     )
 
 @dp.message(F.text == "💡 Брейншторм / Бизнес")
 async def mode_consulting(message: types.Message):
     db.set_user_mode(message.from_user.id, "consulting")
     await message.answer(
-        "💡 <b>Режим «Бизнес-консалтинг» активен!</b>\n\n"
-        "Накидывай любые стартап-идеи или гипотезы. Разберём ЦА, монетизацию и подводные камни. "
-        "Если идея огонь — сразу возьмём в работу!"
+        "💡 <b>Режим «Бизнес-консалтинг»!</b>\n"
+        "Накидывай идеи. Прикинем ЦА, монетизацию и MVP."
     )
 
 @dp.message(F.text == "⏳ Запрос к Хроне (Тайминги)")
 async def check_timings(message: types.Message):
     workload = bridge.get_workload_status_for_kairos("polina")
     await message.answer(
-        f"⏳ <b>Сводка от Хроны по твоему расписанию:</b>\n\n"
+        f"⏳ <b>Сводка от Хроны:</b>\n\n"
         f"<blockquote>{workload}</blockquote>\n"
-        f"<i>Я учитываю это при планировании наших спринтов!</i>"
+        f"<i>Учитываю при планировании спринтов.</i>"
     )
 
 @dp.message(F.text == "🚀 Проекты в работе")
 @dp.message(Command("projects"))
 async def list_projects(message: types.Message):
-    projects = db.get_active_projects()
-    if not projects:
-        await message.answer(
-            "🚀 <b>Проекты в работе:</b>\n\n"
-            "Пока нет активных кастомных проектов в работе.\n"
-            "Обсудим идею в режиме 💡 <b>Брейншторм</b> и запустим?"
-        )
+    if not is_addressed_to_kairos(message):
         return
 
-    text = "🚀 <b>Твои активные проекты в работе:</b>\n\n"
+    projects = db.get_active_projects()
+    if not projects:
+        await message.answer("🚀 Пока нет активных проектов. Обсудим идею в 💡 <b>Брейншторме</b>?")
+        return
+
+    text = "🚀 <b>Проекты в работе:</b>\n\n"
     inline_kb = []
     for p in projects:
-        text += (
-            f"▫️ <b>{p['title']}</b>\n"
-            f"   ▸ Категория: <code>{p['category']}</code>\n"
-            f"   ▸ Дедлайн: <code>{p['deadline'] or 'гибкий'}</code>\n\n"
-        )
-        inline_kb.append([InlineKeyboardButton(text=f"🎯 Фокус: {p['title']}", callback_data=f"select_proj_{p['id']}")])
+        text += f"▫️ <b>{p['title']}</b> (дедлайн: <code>{p['deadline'] or 'гибкий'}</code>)\n"
+        inline_kb.append([InlineKeyboardButton(text=f"🎯 {p['title']}", callback_data=f"select_proj_{p['id']}")])
 
-    text += "<i>Нажми кнопку ниже, чтобы переключить контекст обсуждения:</i>"
     await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb))
 
 @dp.callback_query(F.data.startswith("select_proj_"))
@@ -117,10 +140,8 @@ async def on_project_selected(callback: types.CallbackQuery):
 
     db.set_user_mode(callback.from_user.id, f"project_{proj_id}", active_project_id=proj_id)
     await callback.message.answer(
-        f"🎯 <b>Режим переключен на проект:</b> <code>{project['title']}</code>\n\n"
-        f"<blockquote>Дедлайн: {project['deadline'] or 'гибкий'}\n"
-        f"Теперь держу весь контекст этого бизнеса в фокусе.</blockquote>\n"
-        f"С чего начнём спринт?"
+        f"🎯 <b>Фокус на проекте:</b> <code>{project['title']}</code>\n"
+        f"Дедлайн: <code>{project['deadline'] or 'гибкий'}</code>. С чего начнём?"
     )
     await callback.answer()
 
@@ -137,27 +158,22 @@ async def on_take_in_work(callback: types.CallbackQuery):
         owner="polina"
     )
     db.set_user_mode(callback.from_user.id, f"project_{project_id}", active_project_id=project_id)
-    
-    # Синхронизация с Хроной
     await bridge.notify_chrona_about_new_project(project_id, user_chat_id=callback.from_user.id)
     
     await callback.message.answer(
-        f"🚀 <b>Отлично, идея взята в работу!</b>\n\n"
-        f"▫️ Создан проект ID: <code>#{project_id}</code>\n"
-        f"▫️ Хрона уже получила уведомление и запланировала майлстоуны!\n\n"
-        f"<i>Переименовать проект можно командой:</i> <code>/rename новое имя</code>"
+        f"🚀 <b>Взяли в работу!</b> ID: <code>#{project_id}</code>.\n"
+        f"Хрона зафиксировала спринты. Переименовать: <code>/rename новое имя</code>"
     )
     await callback.answer()
 
 @dp.message(Command("take"))
 async def cmd_take_project(message: types.Message):
-    """Взять конкретный проект: /take Название проекта"""
+    if not is_addressed_to_kairos(message):
+        return
+
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer(
-            "⚠️ <b>Укажи название проекта</b>, например:\n"
-            "<code>/take Сервис открыток со славянскими богами</code>"
-        )
+        await message.answer("⚠️ Укажи название: <code>/take Сервис открыток</code>")
         return
         
     title = args[1].strip()
@@ -171,17 +187,16 @@ async def cmd_take_project(message: types.Message):
         owner="polina"
     )
     db.set_user_mode(message.from_user.id, f"project_{project_id}", active_project_id=project_id)
-    
-    # Сигнал Хроне
     await bridge.notify_chrona_about_new_project(project_id, user_chat_id=message.from_user.id)
     
-    await message.answer(
-        f"🚀 Проект <b>«{title}»</b> успешно запущен и взят в работу!\n\n"
-        f"<blockquote>Режим переключен. Хрона добавила контрольные точки в твой календарь.</blockquote>"
-    )
+    await message.answer(f"🚀 Проект <b>«{title}»</b> взят в работу! Хрона добавила контрольные точки.")
 
 @dp.message()
 async def on_user_message(message: types.Message):
+    # В группе отвечает ТОЛЬКО если обращаются к Кайросу
+    if not is_addressed_to_kairos(message):
+        return
+
     user_id = message.from_user.id
     state = db.get_user_mode(user_id)
     mode = state.get("active_mode", "steam_myth")
@@ -204,21 +219,22 @@ async def on_user_message(message: types.Message):
     inline_kb = None
     if mode == "consulting":
         inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Взять эту идею в работу!", callback_data="take_in_work_current")]
+            [InlineKeyboardButton(text="🚀 Взять в работу", callback_data="take_in_work_current")]
         ])
     
     try:
         await message.answer(reply, reply_markup=inline_kb)
     except Exception:
-        # Резервный вариант, если в HTML закралась ошибка разметки
         await message.answer(reply, reply_markup=inline_kb, parse_mode=None)
 
 async def main():
+    global bot_info
     if not KAIROS_TOKEN:
         print("❌ KAIROS_BOT_TOKEN не задан в .env!")
         return
     bot = Bot(token=KAIROS_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    print("⚡️ Кайрос (Вайбкодинг-партнёр) запущен и готов к работе...")
+    bot_info = await bot.get_me()
+    print(f"⚡️ Кайрос (@{bot_info.username}) запущен и слушает эфир...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
