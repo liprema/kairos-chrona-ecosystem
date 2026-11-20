@@ -22,7 +22,11 @@ class LLMService:
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         if self.api_key:
             genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
+        self.generation_config = {
+            "temperature": 0.7,
+            "max_output_tokens": 800,
+        }
+        self.model = genai.GenerativeModel("gemini-1.5-flash", generation_config=self.generation_config)
 
     def generate_kairos_reply(self, user_message: str, mode: str, project_context: Optional[str] = None, workload_info: Optional[str] = None) -> str:
         """Генерация ответа от лица Кайроса (вайбкодинг-партнер и бро)"""
@@ -84,3 +88,12 @@ class LLMService:
             mode_desc = "ФОКУС: Свободный дружеский разговор, вайбкодинг."
 
         return f"{base_personality}\n{mode_desc}\n{workload_context}"
+
+
+    async def generate_kairos_reply_async(self, user_message: str, mode: str, project_context: Optional[str] = None, workload_info: Optional[str] = None) -> str:
+        import asyncio
+        return await asyncio.to_thread(self.generate_kairos_reply, user_message, mode, project_context, workload_info)
+
+    async def generate_chrona_reply_async(self, user_message: str, current_schedule: str, projects_list: str) -> str:
+        import asyncio
+        return await asyncio.to_thread(self.generate_chrona_reply, user_message, current_schedule, projects_list)

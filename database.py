@@ -58,6 +58,16 @@ class EcosystemDB:
                 chat_history TEXT DEFAULT '[]' -- JSON с последними сообщениями
             )
             """)
+                        # Таблица захвата сообщений для групповых чатов (предотвращение дублирования)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS group_message_claims (
+                chat_id INTEGER,
+                message_id INTEGER,
+                bot_name TEXT NOT NULL,
+                claimed_at TEXT NOT NULL,
+                PRIMARY KEY (chat_id, message_id)
+            )
+            ''')
             conn.commit()
 
     # --- Методы для Проектов (Кайрос) ---
@@ -148,3 +158,25 @@ class EcosystemDB:
             if row:
                 return dict(row)
             return {"active_mode": "steam_myth", "active_project_id": None}
+
+
+    def try_claim_message(self, chat_id: int, message_id: int, bot_name: str) -> bool:
+        """Атомарная попытка забрать сообщение себе. Возвращает True, если бот первый захватил сообщение."""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                INSERT INTO group_message_claims (chat_id, message_id, bot_name, claimed_at)
+                VALUES (?, ?, ?, ?)
+                """, (chat_id, message_id, bot_name, now))
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def is_message_claimed(self, chat_id: int, message_id: int) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT bot_name FROM group_message_claims WHERE chat_id = ? AND message_id = ?", (chat_id, message_id))
+            return cursor.fetchone() is not None

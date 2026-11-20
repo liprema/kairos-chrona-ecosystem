@@ -71,3 +71,59 @@ class BridgeService:
             return "🟢 График на неделю свободен! Отличное время для глубокого вайбкодинг-спринта."
         else:
             return f"ℹ️ Баланс на неделю: {academic} учебных задач, {business} проектных задач. Идём по графику."
+
+def should_bot_handle_message(text: str, bot_name: str, bot_username: Optional[str] = None) -> bool:
+    """
+    Определяет, должен ли конкретный бот обрабатывать сообщение из группы:
+    - Если есть явное обращение (@username или имя) -> обрабатывает только упомянутый бот.
+    - Если упомянут другой бот -> текущий игнорирует.
+    - Если обращение общее:
+        * Тематика учёбы, расписания, дедлайнов, заботы -> Хрона
+        * Тематика геймдева, Steam, Яндекс.Игр, кода, бизнеса -> Кайрос
+        * Иначе (болтовня, нейтральное) -> доступно обоим (решает atomic claim в БД).
+    """
+    t = (text or "").lower().strip()
+    if not t:
+        return False
+
+    chrona_direct = any(k in t for k in ["хрона", "chrona", "хроночк", "хроне", "хрону"])
+    kairos_direct = any(k in t for k in ["кайрос", "kairos", "кайросу", "кайроса", "кайросом"])
+
+    if bot_username:
+        u = bot_username.lower().replace("@", "")
+        if f"@{u}" in t:
+            return True
+        if bot_name == "kairos" and ("@chrona" in t or "chrona_bot" in t):
+            return False
+        if bot_name == "chrona" and ("@kairos" in t or "kairos_bot" in t):
+            return False
+
+    if bot_name == "chrona":
+        if chrona_direct:
+            return True
+        if kairos_direct:
+            return False
+    elif bot_name == "kairos":
+        if kairos_direct:
+            return True
+        if chrona_direct:
+            return False
+
+    chrona_keywords = [
+        "расписани", "дедлайн", "учеб", "зачет", "зачёт", "экзамен", 
+        "сесси", "пара", "пары", "календар", "устал", "отдохн", "план на", "баланс", "тайминг", "сон", "график"
+    ]
+    kairos_keywords = [
+        "steam", "стим", "акаш", "миф", "бог", "богов", "лор", "механик",
+        "яндекс", "игры", "игра", "геймдев", "бизнес", "стартап", "идея", "код", "вайбкодинг", "mvp", "питч", "фич"
+    ]
+
+    c_score = sum(1 for k in chrona_keywords if k in t)
+    k_score = sum(1 for k in kairos_keywords if k in t)
+
+    if c_score > k_score:
+        return bot_name == "chrona"
+    elif k_score > c_score:
+        return bot_name == "kairos"
+
+    return True
