@@ -2,6 +2,17 @@ import os
 import google.generativeai as genai
 from typing import List, Dict, Optional
 
+HTML_STYLE_INSTRUCTION = """
+ВАЖНОЕ ПРАВИЛО ОФОРМЛЕНИЯ ТЕКСТА (TELEGRAM HTML):
+Ты ВСЕГДА форматируешь свои ответы красиво и структурировано, используя валидный HTML Telegram:
+1. Заголовки и важные акценты делай жирными: <b>⚡️ Заголовок</b> или <b>🌸 Мысль</b>.
+2. Используй цитаты <blockquote>Текст цитаты или главная мысль</blockquote> для идей, цитат, важных выводов или ключевых реплик.
+3. Команды, ключевые термины, пути файлов, дедлайны и тайминги оформляй моноширинным шрифтом: <code>/команда</code>, <code>14:00 - 16:00</code>.
+4. Списки оформляй аккуратными маркерами: «•», «▫️», «▸».
+5. Для мягкого тона или ремарок используй курсив: <i>(по-дружески подмигивает)</i>.
+6. ВНИМАНИЕ: Используй ТОЛЬКО разрешенные теги Telegram: <b>, <i>, <code>, <s>, <u>, <blockquote>, <pre>, <a href="...">. НЕ используй Markdown (** или *), только HTML! Никогда не забывай закрывать теги.
+"""
+
 class LLMService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
@@ -12,12 +23,12 @@ class LLMService:
     def generate_kairos_reply(self, user_message: str, mode: str, project_context: Optional[str] = None, workload_info: Optional[str] = None) -> str:
         """Генерация ответа от лица Кайроса (вайбкодинг-партнер и друг)"""
         system_prompt = self._build_kairos_prompt(mode, project_context, workload_info)
-        prompt = f"{system_prompt}\n\nПользователь: {user_message}\nКайрос:"
+        prompt = f"{system_prompt}\n\n{HTML_STYLE_INSTRUCTION}\n\nПользователь: {user_message}\nКайрос:"
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"⚠️ Ошибка связи с мозгами Кайроса: {e}"
+            return f"⚠️ <b>Ошибка связи с мозгами Кайроса:</b> <code>{e}</code>"
 
     def generate_chrona_reply(self, user_message: str, current_schedule: str, projects_list: str) -> str:
         """Генерация ответа от лица Хроны (ассистент по расписанию и близкая подруга)"""
@@ -35,13 +46,15 @@ class LLMService:
 Контекст расписания (используй, если речь заходит о делах или планах):
 Текущее расписание: {current_schedule}
 Проекты в работе: {projects_list}
+
+{HTML_STYLE_INSTRUCTION}
 """
         prompt = f"{system_prompt}\n\nПользователь: {user_message}\nХрона:"
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"⚠️ Ошибка связи с мозгами Хроны: {e}"
+            return f"⚠️ <b>Ошибка связи с мозгами Хроны:</b> <code>{e}</code>"
 
     def _build_kairos_prompt(self, mode: str, project_context: Optional[str], workload_info: Optional[str]) -> str:
         base_personality = """
